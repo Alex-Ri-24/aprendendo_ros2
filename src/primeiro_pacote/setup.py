@@ -27,6 +27,7 @@ setup(
             'r2d2 = primeiro_pacote.r2d2:main',
             'pid = primeiro_pacote.r2d2_controle:main',
             'vfh = primeiro_pacote.VFH:main',
+            'wave = primeiro_pacote.wavefront:main',
             'classe = primeiro_pacote.no_com_classe:main'
         ],
     },

@@ -109,7 +109,7 @@ def generate_launch_description():
         arguments=[
             '-entity', 'sam_bot', 
             '-topic', 'robot_description', 
-            '-x','-9', '-y', '-9', 
+            '-x','-8', '-y', '-8', 
             '--ros-args', '--log-level', LaunchConfiguration('log_level')]
     )
 
