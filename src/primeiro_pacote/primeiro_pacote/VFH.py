@@ -1,15 +1,17 @@
 import rclpy
 from rclpy.node import Node
-
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Twist, Vector3
-
+from geometry_msgs.msg import Twist
 import numpy as np
 import tf_transformations
-
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 
+# Função de normalização de ângulo
+def angle_normalize(angle):
+    return np.arctan2(np.sin(angle), np.cos(angle))
+
+# Nó principal
 class MeuNo(Node):
 
     def __init__(self):
@@ -27,21 +29,13 @@ class MeuNo(Node):
         self.pose = None
         self.create_subscription(Odometry, '/odom', self.listener_callback_odom, qos_profile)
 
-        self.get_logger().info('Definindo o publisher de controle do robo: "/cmd_vel"')
+        self.get_logger().info('Definindo o publisher de controle do robô: "/cmd_vel"')
         self.pub_cmd_vel = self.create_publisher(Twist, '/cmd_vel', 10)
 
-        # Definir objetivo de navegação
-        self.target_position = (9.0, 9.0)  # Posição final desejada
-        self.safe_radius = 2.0  # Raio de segurança para obstáculos
-        self.min_distance_front = 2.4  # Distância mínima para detectar a parede à frente
-
-        # Raio de parada (quando estiver perto do alvo)
-        self.stop_radius = 0.5  # Raio dentro do qual o robô vai parar
-
-        # Velocidade máxima
-        self.max_linear_speed = 0.3
-        self.max_angular_speed = 1.0
-        self.fast_turn_speed = 1.5  # Velocidade de giro rápido
+        self.target_position = (9.0, 9.0)
+        self.safe_radius = 1.0
+        self.safe_distance = 3.5  # Distância para desvio de obstáculos
+        self.alignment_threshold = np.pi / 6
 
     def listener_callback_laser(self, msg):
         self.laser = msg.ranges
@@ -49,109 +43,102 @@ class MeuNo(Node):
     def listener_callback_odom(self, msg):
         self.pose = msg.pose.pose
 
-    def calculate_target_angle(self):
-        """Calcula o ângulo entre a posição do robô e o objetivo"""
-        if self.pose is None:
-            return None
-        
-        # Posição atual do robô
-        robot_x = self.pose.position.x
-        robot_y = self.pose.position.y
-
-        # Posição do objetivo
-        target_x, target_y = self.target_position
-
-        # Calcular o ângulo desejado
-        delta_x = target_x - robot_x
-        delta_y = target_y - robot_y
-        return np.arctan2(delta_y, delta_x)
-
-    def calculate_current_angle(self):
-        """Calcula o ângulo atual do robô"""
-        if self.pose is None:
-            return None
-        
+    def get_robot_orientation(self):
         orientation_q = self.pose.orientation
-        _, _, yaw = tf_transformations.euler_from_quaternion([orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w])
+        orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+        _, _, yaw = tf_transformations.euler_from_quaternion(orientation_list)
         return yaw
 
-    def obstacle_in_front(self):
-        """Verifica se há uma 'parede' ou obstáculo diretamente à frente"""
-        if self.laser is None:
-            return False
+    def get_robot_position(self):
+        return self.pose.position.x, self.pose.position.y
 
-        # Verifica a distância no setor frontal (entre 80 e 100 graus do LIDAR)
-        distancia_frente = min(self.laser[80:100])
-
-        # Verifica se há uma parede ou obstáculo próximo
-        return distancia_frente < self.min_distance_front
-
-    def distance_to_target(self):
-        """Calcula a distância entre o robô e a posição final desejada"""
-        if self.pose is None:
-            return float('inf')
-
-        # Posição atual do robô
-        robot_x = self.pose.position.x
-        robot_y = self.pose.position.y
-
-        # Posição do objetivo
+    def calculate_distance_to_target(self):
+        current_x, current_y = self.get_robot_position()
         target_x, target_y = self.target_position
+        return np.sqrt((target_x - current_x) ** 2 + (target_y - current_y) ** 2)
 
-        # Calcular a distância Euclidiana entre a posição atual e o alvo
-        return np.sqrt((target_x - robot_x)**2 + (target_y - robot_y)**2)
+    def calculate_target_angle(self):
+        current_x, current_y = self.get_robot_position()
+        target_x, target_y = self.target_position
+        return np.arctan2(target_y - current_y, target_x - current_x)
+
+    def vfh(self):
+        if self.laser is None or self.pose is None:
+            return None
+
+        # Histograma para obstáculos
+        histogram = np.zeros(len(self.laser))
+
+        for i, distance in enumerate(self.laser):
+            if 0 < distance < self.safe_distance:  # Se a distância for menor que a segura
+                histogram[i] = 1  # Marca como ocupado
+            else:
+                histogram[i] = 0  # Marca como livre
+
+        # Encontrar setores livres
+        free_sectors = np.where(histogram == 0)[0]
+
+        if len(free_sectors) > 0:
+            max_angle = None
+            max_distance = -1
+            max_width = 0
+            current_width = 0
+            
+            # Percorrer os setores livres para identificar o mais largo
+            for i in range(len(histogram)):
+                if histogram[i] == 0:  # Se o setor é livre
+                    current_width += 1  # Aumentar a largura do setor livre
+                    if self.laser[i] > max_distance:
+                        max_distance = self.laser[i]  # Atualiza a maior distância
+                        max_angle = (i - len(self.laser) / 2) * (np.pi / len(self.laser))
+                        max_width = current_width  # Atualiza a largura do maior setor
+                else:
+                    current_width = 0  # Reinicia a largura se encontrar um setor ocupado
+
+            return max_angle  # Retorna o ângulo do setor livre mais distante
+        else:
+            return None
+
+
+    def compute_cmd_vel(self, target_angle):
+        twist = Twist()
+        yaw = self.get_robot_orientation()
+        angle_diff = angle_normalize(target_angle - yaw)
+
+        if abs(angle_diff) < self.alignment_threshold:
+            twist.linear.x = 0.1  # Reduzir a velocidade linear para 0.1
+            twist.angular.z = 0.0
+        else:
+            twist.linear.x = 0.0
+            twist.angular.z = 0.3 if angle_diff > 0 else -0.3
+
+        return twist
 
     def run(self):
         rclpy.spin_once(self)
 
-        self.get_logger().info('Começando VFH :)')
-
         while rclpy.ok():
             rclpy.spin_once(self)
 
-            if self.laser is None or self.pose is None:
-                continue
+            if self.pose:
+                distance_to_target = self.calculate_distance_to_target()
+                if distance_to_target <= self.safe_radius:
+                    self.get_logger().info('Robô chegou ao destino.')
+                    cmd_vel = Twist()  # Parando o robô
+                else:
+                    target_angle = self.calculate_target_angle()
 
-            # Criar uma mensagem de controle de movimento
-            cmd_vel = Twist()
+                    if self.laser:
+                        vfh_angle = self.vfh()
 
-            # Verificar se o robô está perto do alvo
-            distancia_para_objetivo = self.distance_to_target()
-            if distancia_para_objetivo < self.stop_radius:
-                self.get_logger().info("Alvo alcançado, parando o robô.")
-                cmd_vel.linear.x = 0.0
-                cmd_vel.angular.z = 0.0
-                self.pub_cmd_vel.publish(cmd_vel)
-                continue
+                        if vfh_angle is not None:
+                            # Se há um ângulo livre, ajusta a direção
+                            twist = self.compute_cmd_vel(vfh_angle)
+                        else:
+                            # Se não há ângulo livre, apenas segue o ângulo do objetivo
+                            twist = self.compute_cmd_vel(target_angle)
 
-            # Verificar se há obstáculo à frente (parede)
-            if self.obstacle_in_front():
-                self.get_logger().info("Parede detectada à frente, girando rapidamente...")
-
-                # Gira rapidamente para desviar da "parede"
-                cmd_vel.linear.x = 0.0  # Parar o movimento linear
-                cmd_vel.angular.z = self.fast_turn_speed  # Giro rápido para desviar do obstáculo
-            else:
-                self.get_logger().info("Caminho livre! Avançando...")
-
-                # Quando não houver obstáculos, ajusta a direção para o objetivo
-                target_angle = self.calculate_target_angle()
-                current_angle = self.calculate_current_angle()
-
-                if target_angle is not None and current_angle is not None:
-                    angle_diff = target_angle - current_angle
-
-                    # Ajustar a velocidade angular apenas quando estiver se movendo reto
-                    if np.abs(angle_diff) > 0.1:  # Ajuste para pequenos desvios
-                        cmd_vel.angular.z = np.clip(angle_diff, -self.max_angular_speed, self.max_angular_speed)
-                    else:
-                        cmd_vel.angular.z = 0.0  # Não corrige a rotação
-
-                # Mover-se em linha reta
-                cmd_vel.linear.x = self.max_linear_speed
-
-            # Publicar o comando de movimento
-            self.pub_cmd_vel.publish(cmd_vel)
+                self.pub_cmd_vel.publish(twist)
 
     # Destrutor do nó
     def __del__(self):
