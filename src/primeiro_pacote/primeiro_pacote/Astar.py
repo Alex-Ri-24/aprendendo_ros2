@@ -71,7 +71,7 @@ class MeuNo(Node):
         
         self.pose = None
         self.start = None       # Posição ainda não definida
-        self.goal = (150, 250)  # Posição do objetivo (na escala da matriz)
+        self.goal = (0, 0)    # Posição do objetivo na simulação (em coordenadas simuladas)
         self.path = None
         self.current_target_index = 0
         self.target_tolerance = 0.2
@@ -89,25 +89,29 @@ class MeuNo(Node):
     def listener_callback_odom(self, msg):
         self.pose = msg.pose.pose
         if self.start is None:
-            self.start = self.world_to_grid(self.pose.position.x, self.pose.position.y)  # Convertendo para a matriz
+            self.start = self.world_to_grid(self.pose.position.y, self.pose.position.x)  # Convertendo para a matriz
             self.get_logger().info(f'Posição inicial definida: {self.start}')
+            self.goal_grid = self.world_to_grid(self.goal[0], self.goal[1])  # Converte o objetivo para a matriz
+            self.get_logger().info(f'Posição final definida: {self.goal_grid}')
             self.path = self.generate_path()
             self.visualizar_caminho()
             self.transf_coord(self.path)
 
     def world_to_grid(self, x, y):
-        grid_x = int((y / 0.05) + 200)  # Converte para a célula da matriz, com offset de 200
-        grid_y = int((x / 0.05) + 200)  # Converte para a célula da matriz, com offset de 200
+        # Converte coordenadas de simulação para coordenadas da matriz
+        grid_x = int((x / 0.05) + 200)  # Converte para a célula da matriz, com offset de 200
+        grid_y = int((y / 0.05) + 200)  # Converte para a célula da matriz, com offset de 200
         return (grid_x, grid_y)
 
     def grid_to_world(self, grid):
+        # Converte coordenadas da matriz para coordenadas da simulação
         x = (grid[1] - 200) * 0.05  # Transforma para coordenadas do mundo
         y = (grid[0] - 200) * 0.05  # Transforma para coordenadas do mundo
         return x, y
 
     def generate_path(self):
         self.get_logger().info('Gerando caminho com A*...')
-        return A_Star(self.matrix, self.start, self.goal)
+        return A_Star(self.matrix, self.start, self.goal_grid)  # Usando o objetivo em coordenadas de grid
 
     def get_robot_position(self):
         return self.pose.position.x, self.pose.position.y
@@ -147,33 +151,37 @@ class MeuNo(Node):
     def run(self):
         while rclpy.ok():
             rclpy.spin_once(self)
-            if self.pose and self.path and self.current_target_index < len(self.path):
-                target = self.grid_to_world(self.path[self.current_target_index])
+            if self.pose and self.path:
+                target = self.goal  # Objetivo final
                 robot_x, robot_y = self.get_robot_position()
+
+                # Calculando a distância do robô até o objetivo
                 distance = np.sqrt((robot_x - target[0])**2 + (robot_y - target[1])**2)
 
-                if distance <= self.target_tolerance:
-                    self.current_target_index += 1
+                if distance <= self.target_tolerance:  # Verifica se chegou ao objetivo
+                    self.get_logger().info('Objetivo alcançado!')
+                    # Caso o robô tenha alcançado o objetivo, vamos parar
+                    twist = Twist()
+                    twist.linear.x = 0.0
+                    twist.angular.z = 0.0
+                    self.pub_cmd_vel.publish(twist)
+                    break  # Finaliza o movimento
                 else:
                     twist = Twist()
-                    
+
                     # Calcula o ângulo necessário para virar para o próximo ponto
                     angle_to_target = self.calculate_angle_to_target(target)
                     angle_diff = angle_to_target - self.pose.orientation.z
-                    
-                    # Ajusta a velocidade angular para virada
+
+                    # Ajusta a velocidade angular para virar
                     if abs(angle_diff) > self.angle_tolerance:
                         twist.angular.z = 0.5 * np.sign(angle_diff)
                     else:
                         twist.linear.x = 0.1  # Move para frente
 
-                    # Se chegou no final do caminho, parar
-                    if self.current_target_index >= len(self.path):
-                        twist.linear.x = 0
-                        twist.angular.z = 0
-                        self.get_logger().info('cheguei')
-                    
+                    # Publica o comando de movimento
                     self.pub_cmd_vel.publish(twist)
+
 
 def main(args=None):
     rclpy.init(args=args)
