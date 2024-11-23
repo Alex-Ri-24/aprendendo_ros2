@@ -35,7 +35,7 @@ class MeuNo(Node):
 
         # Definir posições iniciais e de destino
         self.start_position = [-8, -8]  # Posição inicial
-        self.goal = [0, 0]  # Objetivo final
+        self.goal = [8, 8]  # Objetivo final
 
     def load_map(self):
         """Carrega o mapa do arquivo PGM e normaliza os valores"""
@@ -82,17 +82,14 @@ class MeuNo(Node):
 
         # Encontrar o caminho de menor custo
         current = start
-        self.get_logger().info('antes')
         while current != goal:
             neighbors = self.get_neighbors(current)
             valid_neighbors = [n for n in neighbors if self.is_valid(n)]
-            self.get_logger().info('depois')
             if not valid_neighbors:
                 self.get_logger().error("Não há caminho válido para o objetivo.")
                 return path  # Retornar caminho vazio se não houver vizinhos válidos
             
             # Suavização: calcular o custo levando em consideração a distância até o objetivo
-            self.get_logger().info('cu')
             next_cell = min(valid_neighbors, key=lambda x: matrix[x[0]][x[1]] + self.get_distance(x, goal))
             self.get_logger().info('não é aqui')
 
