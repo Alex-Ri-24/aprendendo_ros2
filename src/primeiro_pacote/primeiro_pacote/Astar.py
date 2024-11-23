@@ -11,7 +11,7 @@ def distancia_eucli(posicao, objetivo):
 
 # Função para calcular a probabilidade de ocupação Pocc(n)
 def probabilidade_ocupacao(matrix, posicao):
-    raio = 3  # Raio para calcular a proximidade dos obstáculos
+    raio = 10  # Raio para calcular a proximidade dos obstáculos
     ocupacao = 0
     for a in range(-raio, raio + 1):        # Eixo X
         for b in range(-raio, raio + 1):    # Eixo Y 
@@ -71,7 +71,7 @@ class MeuNo(Node):
         
         self.pose = None
         self.start = None       # Posição ainda não definida
-        self.goal = (0, 0)    # Posição do objetivo na simulação (em coordenadas simuladas)
+        self.goal = (3, 7)    # Posição do objetivo na simulação (em coordenadas simuladas)
         self.path = None
         self.current_target_index = 0
         self.target_tolerance = 0.2
@@ -89,7 +89,7 @@ class MeuNo(Node):
     def listener_callback_odom(self, msg):
         self.pose = msg.pose.pose
         if self.start is None:
-            self.start = self.world_to_grid(self.pose.position.y, self.pose.position.x)  # Convertendo para a matriz
+            self.start = self.world_to_grid(self.pose.position.x, self.pose.position.y)  # Convertendo para a matriz
             self.get_logger().info(f'Posição inicial definida: {self.start}')
             self.goal_grid = self.world_to_grid(self.goal[0], self.goal[1])  # Converte o objetivo para a matriz
             self.get_logger().info(f'Posição final definida: {self.goal_grid}')
@@ -99,8 +99,8 @@ class MeuNo(Node):
 
     def world_to_grid(self, x, y):
         # Converte coordenadas de simulação para coordenadas da matriz
-        grid_x = int((x / 0.05) + 200)  # Converte para a célula da matriz, com offset de 200
-        grid_y = int((y / 0.05) + 200)  # Converte para a célula da matriz, com offset de 200
+        grid_x = int(-(y / 0.05) + 200)  # Converte para a célula da matriz, com offset de 200
+        grid_y = int((x / 0.05) + 200)  # Converte para a célula da matriz, com offset de 200
         return (grid_x, grid_y)
 
     def grid_to_world(self, grid):
@@ -146,42 +146,54 @@ class MeuNo(Node):
             
             # Adicionar a coordenada transformada
             caminho_simulacao.append((sim_x, sim_y))
-        self.caminho_simulacao = caminho_simulacao
+
+            # Loga a coordenada transformada
+            self.get_logger().info(f'Coordenada do caminho na simulação: {sim_x:.2f}, {sim_y:.2f}')
+            
+        self.path = caminho_simulacao ##self.caminho_simulacao
 
     def run(self):
         while rclpy.ok():
             rclpy.spin_once(self)
             if self.pose and self.path:
-                target = self.goal  # Objetivo final
+                # Pegando o próximo ponto do caminho
+                target = self.path[self.current_target_index]  # Pega o próximo ponto do caminho
                 robot_x, robot_y = self.get_robot_position()
 
                 # Calculando a distância do robô até o objetivo
                 distance = np.sqrt((robot_x - target[0])**2 + (robot_y - target[1])**2)
 
-                if distance <= self.target_tolerance:  # Verifica se chegou ao objetivo
-                    self.get_logger().info('Objetivo alcançado!')
-                    # Caso o robô tenha alcançado o objetivo, vamos parar
-                    twist = Twist()
-                    twist.linear.x = 0.0
-                    twist.angular.z = 0.0
-                    self.pub_cmd_vel.publish(twist)
-                    break  # Finaliza o movimento
+                # Se a distância até o próximo ponto for menor que a tolerância, avança para o próximo ponto
+                if distance <= self.target_tolerance:
+                    self.get_logger().info(f'Ponto {self.current_target_index} alcançado!')
+                    self.current_target_index += 1  # Avança para o próximo ponto do caminho
+
+                    # Verifica se atingiu o último ponto
+                    if self.current_target_index >= len(self.path):
+                        self.get_logger().info('Objetivo final alcançado!')
+                        twist = Twist()
+                        twist.linear.x = 0.0
+                        twist.angular.z = 0.0
+                        self.pub_cmd_vel.publish(twist)
+                        break  # Sai do loop de movimento, já que o objetivo foi alcançado
+
+                # Caso contrário, gira para alinhar com o próximo ponto
                 else:
-                    twist = Twist()
+                    target_angle = self.calculate_angle_to_target(target)
+                    angle_diff = target_angle - self.pose.orientation.z
 
-                    # Calcula o ângulo necessário para virar para o próximo ponto
-                    angle_to_target = self.calculate_angle_to_target(target)
-                    angle_diff = angle_to_target - self.pose.orientation.z
-
-                    # Ajusta a velocidade angular para virar
+                    # Adiciona controle de correção de rotação (evita que o robô gire muito rápido)
                     if abs(angle_diff) > self.angle_tolerance:
-                        twist.angular.z = 0.5 * np.sign(angle_diff)
+                        twist = Twist()
+                        twist.linear.x = 0.0  # Não avança se precisar corrigir o ângulo
+                        twist.angular.z = angle_diff  # Gira até o objetivo
+                        self.pub_cmd_vel.publish(twist)
                     else:
-                        twist.linear.x = 0.1  # Move para frente
-
-                    # Publica o comando de movimento
-                    self.pub_cmd_vel.publish(twist)
-
+                        # Se a rotação estiver corrigida, avança em linha reta
+                        twist = Twist()
+                        twist.linear.x = 0.1  # Movimento para frente
+                        twist.angular.z = 0.0  # Gira só quando necessário
+                        self.pub_cmd_vel.publish(twist)
 
 def main(args=None):
     rclpy.init(args=args)
