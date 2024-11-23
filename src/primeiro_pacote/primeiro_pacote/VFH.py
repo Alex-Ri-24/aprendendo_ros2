@@ -106,7 +106,7 @@ class MeuNo(Node):
         angle_diff = angle_normalize(target_angle - yaw)
 
         if abs(angle_diff) < self.alignment_threshold:
-            twist.linear.x = 0.1  # Reduzir a velocidade linear para 0.1
+            twist.linear.x = 0.2  # Reduzir a velocidade linear para 0.2
             twist.angular.z = 0.0
         else:
             twist.linear.x = 0.0

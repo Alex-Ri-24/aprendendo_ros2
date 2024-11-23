@@ -21,13 +21,13 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'ola = primeiro_pacote.meu_primeiro_no:main',
+            'teste = primeiro_pacote.meu_primeiro_no:main',
             'talker = primeiro_pacote.talker:main',
-            'lis = primeiro_pacote.listener:main',
+            'listener = primeiro_pacote.listener:main',
             'r2d2 = primeiro_pacote.r2d2:main',
             'pid = primeiro_pacote.r2d2_controle:main',
             'vfh = primeiro_pacote.VFH:main',
-            'wave = primeiro_pacote.wavefront:main',
+            'estrela = primeiro_pacote.Astar:main',
             'classe = primeiro_pacote.no_com_classe:main'
         ],
     },
