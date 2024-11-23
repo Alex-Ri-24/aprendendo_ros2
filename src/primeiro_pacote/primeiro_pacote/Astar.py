@@ -11,7 +11,7 @@ def distancia_eucli(posicao, objetivo):
 
 # Função para calcular a probabilidade de ocupação Pocc(n)
 def probabilidade_ocupacao(matrix, posicao):
-    raio = 5  # Raio para calcular a proximidade dos obstáculos
+    raio = 3  # Raio para calcular a proximidade dos obstáculos
     ocupacao = 0
     for a in range(-raio, raio + 1):        # Eixo X
         for b in range(-raio, raio + 1):    # Eixo Y 
@@ -71,7 +71,7 @@ class MeuNo(Node):
         
         self.pose = None
         self.start = None       # Posição ainda não definida
-        self.goal = (150, 250)  # Posição do objetivo
+        self.goal = (150, 250)  # Posição do objetivo (na escala da matriz)
         self.path = None
         self.current_target_index = 0
         self.target_tolerance = 0.2
@@ -163,10 +163,16 @@ class MeuNo(Node):
                     
                     # Ajusta a velocidade angular para virada
                     if abs(angle_diff) > self.angle_tolerance:
-                        twist.angular.z = 0.3 if angle_diff > 0 else -0.3
+                        twist.angular.z = 0.5 * np.sign(angle_diff)
                     else:
-                        twist.linear.x = 0.2  # Move para frente
+                        twist.linear.x = 0.1  # Move para frente
 
+                    # Se chegou no final do caminho, parar
+                    if self.current_target_index >= len(self.path):
+                        twist.linear.x = 0
+                        twist.angular.z = 0
+                        self.get_logger().info('cheguei')
+                    
                     self.pub_cmd_vel.publish(twist)
 
 def main(args=None):
