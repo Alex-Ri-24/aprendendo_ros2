@@ -85,7 +85,7 @@ class MeuNo(Node):
         self.path = None
         self.current_target_index = 0
         self.target_tolerance = 0.2             # Tolerância de distância para considerar um ponto como alcançado
-        self.angle_tolerance = 0.1              # Tolerância angular para alinhamento
+        self.angle_tolerance = 0.1              # Tolerância angular para alinhamento do robô
 
         self.pub_cmd_vel = self.create_publisher(Twist, '/cmd_vel', 10)
 
@@ -93,13 +93,13 @@ class MeuNo(Node):
 
         # Carregando o mapa
         pgmf = open('src/my_map2.pgm', 'rb')    # Abre o arquivo de mapa
-        self.matrix = plt.imread(pgmf)          # Lê o arquivo como imagem
+        self.matrix = plt.imread(pgmf)          # Lê o arquivo
         pgmf.close()
     
         self.matrix = 1.0 * (self.matrix > 250) # Converte o mapa em binário (1 = livre, 0 = obstáculo)
 
     def listener_callback_odom(self, msg):
-        self.pose = msg.pose.pose               # Atualiza a pose do robô
+        self.pose = msg.pose.pose               
         if self.start is None:
             self.start = self.mundo_to_grid(self.pose.position.x, self.pose.position.y)
             self.get_logger().info(f'Posição inicial definida: {self.start}')
@@ -107,13 +107,13 @@ class MeuNo(Node):
             self.goal_grid = self.mundo_to_grid(self.goal[0], self.goal[1])
             self.get_logger().info(f'Posição final definida: {self.goal_grid}')
 
-            self.path = self.generate_path()   # Gera o caminho com A*
-            self.visualizar_caminho()          # Mostra o caminho gerado
-            self.transf_coord(self.path)       # Transforma para coordenadas do mundo
+            self.path = self.generate_path()    # Gera o caminho com A*
+            self.visualizar_caminho()           # Mostra o caminho gerado
+            self.transf_coord(self.path)        # Transforma para coordenadas do mundo
 
     # Converte coordenadas do mundo para matriz do mapa
     def mundo_to_grid(self, x, y):
-        grid_x = int(-(y / 0.05) + 200)        # para matriz: (y, x)
+        grid_x = int(-(y / 0.05) + 200)         # para matriz: (y, x)
         grid_y = int((x / 0.05) + 200)
         return (grid_x, grid_y)
 
