@@ -63,9 +63,11 @@ def generate_launch_description():
         arguments=[
             '-entity', LaunchConfiguration('robot_name'),
             '-file', LaunchConfiguration('robot_sdf'),
+            '-x','-6.25', '-y', '-2', 
             '-robot_namespace', LaunchConfiguration('namespace')
         ]
     )
+
 
     rviz_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([get_package_share_directory('nav2_bringup'),'/launch/rviz_launch.py']),

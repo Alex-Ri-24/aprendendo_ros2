@@ -71,7 +71,7 @@ class MeuNo(Node):
         
         self.pose = None
         self.start = None       # Posição ainda não definida
-        self.goal = (3, 7)    # Posição do objetivo na simulação (em coordenadas simuladas)
+        self.goal = (0, 0)    # Posição do objetivo na simulação (em coordenadas simuladas)
         self.path = None
         self.current_target_index = 0
         self.target_tolerance = 0.2
